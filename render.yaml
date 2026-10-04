@@ -1,0 +1,33 @@
+services:
+  # AutoQA FastAPI + Playwright Headless Execution Backend
+  - type: web
+    name: autoqa-backend
+    env: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: HEADLESS
+        value: "true"
+      - key: DEFAULT_MODEL
+        value: "gemini-1.5-flash"
+      - key: PROJECT_NAME
+        value: "AutoQA Engine"
+
+  # AutoQA Next.js 14 Web Studio Frontend
+  - type: web
+    name: autoqa-frontend
+    env: node
+    plan: free
+    rootDir: frontend
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NEXT_PUBLIC_BACKEND_URL
+        fromService:
+          type: web
+          name: autoqa-backend
+          property: host
