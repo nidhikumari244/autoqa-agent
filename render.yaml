@@ -3,8 +3,9 @@ services:
   - type: web
     name: autoqa-backend
     env: docker
-    dockerfilePath: ./backend/Dockerfile
-    dockerContext: ./backend
+    rootDir: backend
+    dockerfilePath: Dockerfile
+    dockerContext: .
     plan: free
     healthCheckPath: /health
     envVars:
