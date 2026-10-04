@@ -31,3 +31,5 @@ services:
           type: web
           name: autoqa-backend
           property: host
+      - key: NODE_OPTIONS
+        value: "--max-old-space-size=450"
