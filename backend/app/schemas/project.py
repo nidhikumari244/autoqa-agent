@@ -66,7 +66,6 @@ class TestRunResponse(BaseModel):
     id: str
     scenario_id: str
     status: str
-    total_steps: Optional[int] = 0
     duration_ms: Optional[int] = None
     generated_code_python: Optional[str] = None
     generated_code_ts: Optional[str] = None
@@ -75,6 +74,11 @@ class TestRunResponse(BaseModel):
     created_at: datetime
     finished_at: Optional[datetime] = None
     steps: List[TestStepResponse] = []
+
+    @computed_field
+    @property
+    def total_steps(self) -> int:
+        return len(self.steps)
 
     class Config:
         from_attributes = True
