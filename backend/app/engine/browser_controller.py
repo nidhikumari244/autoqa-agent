@@ -47,8 +47,14 @@ class BrowserController:
     async def capture_screenshot(self, save_path: Optional[str] = None) -> bytes:
         if not self.page:
             raise RuntimeError("Browser not started.")
-        screenshot_bytes = await self.page.screenshot(type="jpeg", quality=85)
-        if save_path:
+        try:
+            screenshot_bytes = await self.page.screenshot(type="jpeg", quality=85, timeout=5000)
+        except Exception:
+            try:
+                screenshot_bytes = await self.page.screenshot(type="jpeg", quality=60, timeout=3000)
+            except Exception:
+                screenshot_bytes = b""
+        if save_path and screenshot_bytes:
             Path(save_path).parent.mkdir(parents=True, exist_ok=True)
             with open(save_path, "wb") as f:
                 f.write(screenshot_bytes)

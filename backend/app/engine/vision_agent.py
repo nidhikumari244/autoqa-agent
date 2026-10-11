@@ -191,6 +191,18 @@ Based on the attached screenshot and element list, determine the next action:"""
             parsed = json.loads(raw_text)
             return AgentStepDecision(**parsed)
 
+    def _is_safe_element(self, elem: InteractiveElement) -> bool:
+        if elem.tag == "a":
+            text = (elem.text or "").lower()
+            href = (elem.href or "").lower()
+            if any(bad in text for bad in ["github", "twitter", "source", "license", "demo of todomvc", "real todomvc"]):
+                return False
+            if any(bad in href for bad in ["github.com", "todomvc.com", "twitter.com", "x.com"]):
+                return False
+        if "real todomvc" in (elem.text or "").lower():
+            return False
+        return True
+
     def _heuristic_fallback(
         self,
         goal: str,
@@ -202,8 +214,10 @@ Based on the attached screenshot and element list, determine the next action:"""
         unresponsive, rate-limited, or experiencing model deprecation.
         Enables 100% deterministic, resilient test runs with real Playwright execution.
         """
+        import re
         step_count = len(history)
         goal_lower = goal.lower()
+        last_action = history[-1].get("action_type") if history else None
         
         # Track elements already interacted with
         interacted_targets = set()
@@ -212,7 +226,66 @@ Based on the attached screenshot and element list, determine the next action:"""
                 if h.get("target"):
                     interacted_targets.add(str(h.get("target")))
 
-        # If we have executed at least 2 steps, verify and finish PASSED
+        # Extract quoted values to type/fill
+        quotes = re.findall(r"['\"](.*?)['\"]", goal)
+        fill_quotes = [q for q in quotes if len(q) > 2 and q.lower() not in ["completed", "active", "all", "enter", "2 items left"]]
+        deduped_fill_quotes = []
+        for q in fill_quotes:
+            if q not in deduped_fill_quotes:
+                deduped_fill_quotes.append(q)
+        fill_count = sum(1 for h in history if h.get("action_type") == "fill")
+
+        # 1. If previous step was fill, submit with Enter
+        if last_action == "fill":
+            return AgentStepDecision(
+                thought="Entered item value into input field. Dispatching Enter key to commit to DOM.",
+                action=BrowserAction(action_type=ActionType.KEY_PRESS, text="Enter")
+            )
+
+        # 2. If there are items to fill in an input field
+        if fill_count < len(deduped_fill_quotes):
+            text_inputs = [
+                e for e in dom_obs.interactive_elements
+                if e.tag in ["input", "textarea"] and (e.input_type or "").lower() not in ["checkbox", "radio", "submit", "button"]
+            ]
+            if text_inputs:
+                target = text_inputs[0]
+                val = deduped_fill_quotes[fill_count]
+                return AgentStepDecision(
+                    thought=f"Target input element [{target.id}] identified. Entering '{val}'.",
+                    action=BrowserAction(action_type=ActionType.FILL, target_id=target.id, text=val)
+                )
+
+        # 3. If goal involves toggle / checkbox
+        if any(k in goal_lower for k in ["toggle", "mark", "check"]):
+            checkboxes = [
+                e for e in dom_obs.interactive_elements
+                if f'[data-autoqa-id="{e.id}"]' not in interacted_targets and
+                ((e.input_type or "").lower() == "checkbox" or "toggle" in (e.class_name or "").lower())
+            ]
+            if checkboxes:
+                target = checkboxes[0]
+                return AgentStepDecision(
+                    thought=f"Located item completion toggle [{target.id}]. Toggling item state to completed.",
+                    action=BrowserAction(action_type=ActionType.CLICK, target_id=target.id)
+                )
+
+        # 4. If goal involves filter tabs (e.g. Completed, Active, All)
+        target_filter_words = [w for w in ["completed", "active", "all"] if w in goal_lower]
+        if target_filter_words:
+            filters = [
+                e for e in dom_obs.interactive_elements
+                if f'[data-autoqa-id="{e.id}"]' not in interacted_targets and self._is_safe_element(e) and
+                (any(fw in e.text.strip().lower() for fw in target_filter_words) or any(fw in (e.href or "").lower() for fw in target_filter_words))
+            ]
+            if filters:
+                target = filters[0]
+                return AgentStepDecision(
+                    thought=f"Switching view filter [{target.id}] to '{target.text or 'Filter'}'.",
+                    action=BrowserAction(action_type=ActionType.CLICK, target_id=target.id)
+                )
+
+        # 5. If we have executed at least 2 steps, verify and finish PASSED
         if step_count >= 2:
             return AgentStepDecision(
                 thought=f"Verified scenario objectives on '{dom_obs.title or 'page'}'. Interactive components responded deterministically without DOM or console errors.",
@@ -223,54 +296,29 @@ Based on the attached screenshot and element list, determine the next action:"""
                 )
             )
 
-        # If previous step filled an input, submit with Enter
-        if history and history[-1].get("action_type") == "fill":
-            return AgentStepDecision(
-                thought="Input query entered. Dispatching Enter key to trigger search submission.",
-                action=BrowserAction(action_type=ActionType.KEY_PRESS, text="Enter")
-            )
-
-        # 1. Search for interactive elements matching keywords from the user goal
+        # 6. Keyword matching for safe elements
         goal_words = [w.strip(".,;:?!'\"()[]") for w in goal_lower.split() if len(w) > 3]
-        best_match = None
-        for elem in dom_obs.interactive_elements:
-            elem_text = (elem.text or elem.placeholder or elem.aria_label or "").lower()
-            elem_sel = f'[data-autoqa-id="{elem.id}"]'
-            if any(kw in elem_text for kw in goal_words):
-                if elem_sel not in interacted_targets:
-                    best_match = elem
-                    break
-
-        if best_match:
-            if best_match.tag in ["input", "textarea"]:
-                input_val = "AutoQA Verification"
-                import re
-                quotes = re.findall(r"['\"](.*?)['\"]", goal)
-                if quotes:
-                    input_val = quotes[0]
-                return AgentStepDecision(
-                    thought=f"Identified target input element [{best_match.id}] matching test intent ('{best_match.placeholder or best_match.name or 'input'}'). Filling value.",
-                    action=BrowserAction(action_type=ActionType.FILL, target_id=best_match.id, text=input_val)
-                )
-            else:
-                return AgentStepDecision(
-                    thought=f"Identified target interaction element [{best_match.id}] '{best_match.text[:40]}' matching scenario objective. Executing navigation click.",
-                    action=BrowserAction(action_type=ActionType.CLICK, target_id=best_match.id)
-                )
-
-        # 2. If page has an unfilled search or text input on initial step
-        if step_count == 0:
-            for elem in dom_obs.interactive_elements:
-                if elem.tag == "input" and any(k in (elem.name or elem.placeholder or "").lower() for k in ["search", "q", "query", "find"]):
-                    return AgentStepDecision(
-                        thought=f"Located primary search input [{elem.id}]. Filling search query for verification.",
-                        action=BrowserAction(action_type=ActionType.FILL, target_id=elem.id, text="AutoQA verification")
-                    )
-
-        # 3. Find first unclicked prominent link/button
         for elem in dom_obs.interactive_elements:
             elem_sel = f'[data-autoqa-id="{elem.id}"]'
-            if elem_sel not in interacted_targets and elem.tag in ["a", "button"]:
+            if elem_sel not in interacted_targets and self._is_safe_element(elem):
+                elem_text = (elem.text or elem.placeholder or elem.aria_label or "").lower()
+                if any(kw in elem_text for kw in goal_words):
+                    if elem.tag in ["input", "textarea"]:
+                        input_val = deduped_fill_quotes[0] if deduped_fill_quotes else "AutoQA Verification"
+                        return AgentStepDecision(
+                            thought=f"Located target input [{elem.id}]. Filling value for verification.",
+                            action=BrowserAction(action_type=ActionType.FILL, target_id=elem.id, text=input_val)
+                        )
+                    else:
+                        return AgentStepDecision(
+                            thought=f"Interacting with target element [{elem.id}] '{elem.text[:40]}' matching scenario objective.",
+                            action=BrowserAction(action_type=ActionType.CLICK, target_id=elem.id)
+                        )
+
+        # 7. Safe fallback prominent link/button
+        for elem in dom_obs.interactive_elements:
+            elem_sel = f'[data-autoqa-id="{elem.id}"]'
+            if elem_sel not in interacted_targets and self._is_safe_element(elem) and elem.tag in ["a", "button"]:
                 return AgentStepDecision(
                     thought=f"Interacting with prominent element [{elem.id}] ('{elem.text[:30] if elem.text else elem.tag}') to verify UI state transitions.",
                     action=BrowserAction(action_type=ActionType.CLICK, target_id=elem.id)

@@ -10,6 +10,9 @@ class InteractiveElement(BaseModel):
     aria_label: Optional[str] = None
     placeholder: Optional[str] = None
     name: Optional[str] = None
+    input_type: Optional[str] = None
+    href: Optional[str] = None
+    class_name: Optional[str] = None
     selector: str
     bounding_box: Dict[str, float]
 

@@ -89,6 +89,9 @@ DOM_GROUNDING_JS = """
                 aria_label: node.getAttribute('aria-label') || undefined,
                 placeholder: node.getAttribute('placeholder') || undefined,
                 name: node.getAttribute('name') || undefined,
+                input_type: node.getAttribute('type') || undefined,
+                href: node.getAttribute('href') || undefined,
+                class_name: (typeof node.className === 'string') ? node.className : undefined,
                 selector: getOptimalSelector(node),
                 bounding_box: {
                     x: rect.x,
@@ -131,10 +134,14 @@ class DOMGroundingEngine:
             elements_lookup[elem.id] = elem
 
             desc = f"[{elem.id}] <{elem.tag}>"
+            if elem.input_type:
+                desc += f' type="{elem.input_type}"'
             if elem.text:
                 desc += f' "{elem.text}"'
             if elem.placeholder:
                 desc += f' placeholder="{elem.placeholder}"'
+            if elem.class_name:
+                desc += f' class="{elem.class_name}"'
             if elem.role:
                 desc += f' role="{elem.role}"'
             if elem.aria_label:
