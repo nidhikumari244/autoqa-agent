@@ -1,4 +1,4 @@
-export const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+export const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "https://autoqa-backend-6yl3.onrender.com";
 export const API_BASE = process.env.NEXT_PUBLIC_API_URL || `${BACKEND_URL}/api/v1`;
 export const WS_BASE = process.env.NEXT_PUBLIC_WS_URL || `${BACKEND_URL.replace(/^http/, "ws")}/api/v1/ws`;
 

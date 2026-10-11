@@ -2,8 +2,11 @@ import sqlite3
 import uuid
 from datetime import datetime, timezone
 
+from pathlib import Path
+
 def seed():
-    conn = sqlite3.connect("autoqa.db")
+    db_path = Path(__file__).resolve().parent / "autoqa.db"
+    conn = sqlite3.connect(str(db_path))
     c = conn.cursor()
 
     # 1. Wikipedia Knowledge Portal

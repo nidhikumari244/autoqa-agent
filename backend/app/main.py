@@ -16,6 +16,11 @@ async def lifespan(app: FastAPI):
     ws_manager.register_loop(asyncio.get_running_loop())
     await init_db()
     settings.ARTIFACTS_PATH.mkdir(parents=True, exist_ok=True)
+    try:
+        from seed_data import seed
+        seed()
+    except Exception as e:
+        print("Auto-seed error:", e)
     yield
     # Shutdown
 
